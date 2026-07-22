@@ -46,11 +46,29 @@ This is a single-user app with no login — anyone with the URL and no Supabase 
 
 Your resume content lives in [`lib/resume-data.ts`](lib/resume-data.ts) as the `defaultBaseResume` object. Edit it directly with your real name, contact info, skills, experience, and education.
 
-## Deployment (Firebase App Hosting)
+## Deployment (Vercel)
 
-This app uses Next.js API routes and streams PDFs, so it's deployed with **Firebase App Hosting** (not static Firebase Hosting, which doesn't support SSR/API routes). App Hosting requires the Firebase project to be on the Blaze (pay-as-you-go) plan.
+This app is deployed on **Vercel's free Hobby tier**. Vercel auto-detects Next.js, and the app's only server-side dependency (Firebase AI Logic's `firebase/ai` package, used in [`app/api/tailor-resume/route.ts`](app/api/tailor-resume/route.ts)) runs fine in a standard Node.js serverless function — no Blaze plan or App Hosting needed. (Firebase AI Logic's "Gemini Developer API" backend, which this app uses, is free on Firebase's Spark plan; only Firebase *App Hosting* required Blaze.)
 
-Push to the connected GitHub branch — Firebase App Hosting builds and deploys automatically on push. See [`apphosting.yaml`](apphosting.yaml) for the runtime configuration; the Firebase web app config is plain (non-secret) env vars there since it only identifies the project, not an API credential.
+1. Sign up at [vercel.com](https://vercel.com) (GitHub login works).
+2. **Add New Project** → import the `TheRealMenace10040/resume-tailor` GitHub repo. Vercel detects the Next.js framework automatically — no `vercel.json` needed.
+3. Before the first deploy (or right after, then redeploy), add these environment variables in the Vercel project's **Settings → Environment Variables**:
+
+   | Variable | Value |
+   |---|---|
+   | `NEXT_PUBLIC_SUPABASE_URL` | `https://rqqvlqbnhrxfeaaaxvhg.supabase.co` |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `sb_publishable_z7-MvSvPnSIcE89YSQ9x_A_t3zqvU6Z` |
+   | `NEXT_PUBLIC_FIREBASE_API_KEY` | `AIzaSyDkuiU-c5kEA30pbqBLEjK0o5Aj4Si4NwM` |
+   | `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | `resume-tailor-2026.firebaseapp.com` |
+   | `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | `resume-tailor-2026` |
+   | `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | `resume-tailor-2026.firebasestorage.app` |
+   | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | `169070549106` |
+   | `NEXT_PUBLIC_FIREBASE_APP_ID` | `1:169070549106:web:4d0a3ec671ef3d3f558aeb` |
+
+   None of these are secret credentials — the Supabase table has no RLS/auth (see warning above) and the Firebase values are public web app config, not API keys — but they still need to be set in Vercel since `.env.local` isn't committed.
+4. Deploy. Every push to the connected branch redeploys automatically.
+
+`apphosting.yaml` and `.firebaserc` are left in the repo from the earlier Firebase App Hosting setup; Vercel ignores them and they can stay or go.
 
 ## Tech stack
 
