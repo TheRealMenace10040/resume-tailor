@@ -1,15 +1,58 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { defaultBaseResume } from '@/lib/resume-data';
-import { JobPostingDetails, TailoredResumeResult } from '@/lib/types';
+import { fetchActiveResume } from '@/lib/resumes';
+import { BaseResume, JobPostingDetails, TailoredResumeResult } from '@/lib/types';
 import { DownloadPdfButton } from '@/components/DownloadPdfButton';
 import { HistoryList } from '@/components/HistoryList';
+import { ResumeUpload } from '@/components/ResumeUpload';
+import { ResumeReviewForm } from '@/components/ResumeReviewForm';
+import { ResumeList } from '@/components/ResumeList';
 
 type InputMode = 'url' | 'manual';
 
 export default function HomePage() {
-  const baseResume = defaultBaseResume;
+  const [baseResume, setBaseResume] = useState<BaseResume>(defaultBaseResume);
+  const [activeResumeId, setActiveResumeId] = useState<string | null>(null);
+  const [isLoadingActiveResume, setIsLoadingActiveResume] = useState(true);
+  const [resumeListVersion, setResumeListVersion] = useState(0);
+  const [pendingParsedResume, setPendingParsedResume] = useState<{ resume: BaseResume; filename: string } | null>(
+    null
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadActiveResume() {
+      const active = await fetchActiveResume();
+      if (cancelled) return;
+      if (active) {
+        setBaseResume(active.resume_data);
+        setActiveResumeId(active.id);
+      }
+      setIsLoadingActiveResume(false);
+    }
+    loadActiveResume();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function handleResumeParsed(resume: BaseResume, filename: string) {
+    setPendingParsedResume({ resume, filename });
+  }
+
+  function handleReviewSaved(resume: BaseResume, resumeId: string) {
+    setBaseResume(resume);
+    setActiveResumeId(resumeId);
+    setPendingParsedResume(null);
+    setResumeListVersion((v) => v + 1);
+  }
+
+  function handleActiveResumeChange(resume: BaseResume, resumeId: string | null) {
+    setBaseResume(resume);
+    setActiveResumeId(resumeId);
+  }
 
   const [inputMode, setInputMode] = useState<InputMode>('url');
   const [jobUrl, setJobUrl] = useState('');
@@ -94,35 +137,54 @@ export default function HomePage() {
         Paste a job posting, get a tailored resume, and download a matching PDF to submit yourself.
       </p>
 
+      {/* Resume upload */}
+      <ResumeUpload onParsed={handleResumeParsed} />
+
+      {pendingParsedResume && (
+        <ResumeReviewForm
+          initialResume={pendingParsedResume.resume}
+          defaultLabel={pendingParsedResume.filename.replace(/\.pdf$/i, '').trim() || 'Untitled Resume'}
+          sourceFilename={pendingParsedResume.filename}
+          onCancel={() => setPendingParsedResume(null)}
+          onSaved={handleReviewSaved}
+        />
+      )}
+
       {/* Base resume */}
-      <section className="mt-8 rounded-lg border border-slate-200 bg-white p-5">
+      <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5">
         <h2 className="text-lg font-semibold text-slate-900">Base Resume</h2>
-        <p className="mt-1 text-sm font-medium">{baseResume.contact.name}</p>
-        <p className="text-sm text-slate-600">{baseResume.summary}</p>
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {baseResume.skills.map((skill) => (
-            <span key={skill} className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
-              {skill}
-            </span>
-          ))}
-        </div>
-        <div className="mt-4 space-y-3">
-          {baseResume.experience.map((exp) => (
-            <div key={exp.id}>
-              <p className="text-sm font-medium text-slate-900">
-                {exp.role} · {exp.company}
-              </p>
-              <p className="text-xs text-slate-500">
-                {exp.startDate} – {exp.endDate}
-              </p>
-              <ul className="mt-1 list-inside list-disc text-sm text-slate-600">
-                {exp.bullets.map((bullet, idx) => (
-                  <li key={idx}>{bullet}</li>
-                ))}
-              </ul>
+        {isLoadingActiveResume ? (
+          <p className="mt-1 text-sm text-slate-500">Loading…</p>
+        ) : (
+          <>
+            <p className="mt-1 text-sm font-medium">{baseResume.contact.name}</p>
+            <p className="text-sm text-slate-600">{baseResume.summary}</p>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {baseResume.skills.map((skill) => (
+                <span key={skill} className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
+                  {skill}
+                </span>
+              ))}
             </div>
-          ))}
-        </div>
+            <div className="mt-4 space-y-3">
+              {baseResume.experience.map((exp) => (
+                <div key={exp.id}>
+                  <p className="text-sm font-medium text-slate-900">
+                    {exp.role} · {exp.company}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {exp.startDate} – {exp.endDate}
+                  </p>
+                  <ul className="mt-1 list-inside list-disc text-sm text-slate-600">
+                    {exp.bullets.map((bullet, idx) => (
+                      <li key={idx}>{bullet}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </section>
 
       {/* Job input */}
@@ -292,6 +354,18 @@ export default function HomePage() {
         <h2 className="text-lg font-semibold text-slate-900">History</h2>
         <div className="mt-3">
           <HistoryList />
+        </div>
+      </section>
+
+      {/* Resume switcher */}
+      <section className="mt-6">
+        <h2 className="text-lg font-semibold text-slate-900">Your Resumes</h2>
+        <div className="mt-3">
+          <ResumeList
+            activeResumeId={activeResumeId}
+            refreshSignal={resumeListVersion}
+            onActiveResumeChange={handleActiveResumeChange}
+          />
         </div>
       </section>
     </main>

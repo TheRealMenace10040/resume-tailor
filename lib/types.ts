@@ -91,6 +91,16 @@ export const tailorResumeRequestSchema = z.object({
   jobUrl: z.string().url().optional(),
 });
 
+export interface ResumeRow {
+  id: string;
+  label: string;
+  resume_data: BaseResume;
+  source_filename: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ResumeHistoryRow {
   id: string;
   job_title: string | null;
