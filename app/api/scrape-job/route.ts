@@ -66,6 +66,25 @@ function parseLever($: cheerio.CheerioAPI): { title: string; company: string; de
   return { title, company, description };
 }
 
+function parseLinkedIn($: cheerio.CheerioAPI): { title: string; company: string; description: string } | null {
+  const title = $('h1.top-card-layout__title, .topcard__title').first().text().trim();
+  const company =
+    $('a.topcard__org-name-link, .topcard__org-name-link').first().text().trim() ||
+    $('meta[property="og:site_name"]').attr('content') ||
+    extractCompanyFromDocTitle($) ||
+    '';
+
+  const descriptionEl = $('.show-more-less-html__markup, .description__text').first();
+  descriptionEl.find('br').replaceWith('\n');
+  descriptionEl.find('li, p').each((_, el) => {
+    $(el).append('\n');
+  });
+  const description = cleanText(descriptionEl.text());
+
+  if (!title || description.length < 50) return null;
+  return { title, company, description };
+}
+
 function parseGeneric($: cheerio.CheerioAPI): { title: string; company: string; description: string } | null {
   const title =
     $('h1').first().text().trim() ||
@@ -138,10 +157,12 @@ export async function POST(request: NextRequest) {
       parsedJob = parseGreenhouse($);
     } else if (host.includes('lever.co')) {
       parsedJob = parseLever($);
+    } else if (host.includes('linkedin.com')) {
+      parsedJob = parseLinkedIn($);
     }
 
     if (!parsedJob) {
-      parsedJob = parseGreenhouse($) || parseLever($) || parseGeneric($);
+      parsedJob = parseGreenhouse($) || parseLever($) || parseLinkedIn($) || parseGeneric($);
     }
 
     if (!parsedJob) {

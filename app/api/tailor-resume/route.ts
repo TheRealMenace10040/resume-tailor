@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAI, getGenerativeModel, GoogleAIBackend, Schema } from 'firebase/ai';
+import { GoogleGenerativeAI, SchemaType, type Schema } from '@google/generative-ai';
 import { supabase } from '@/lib/supabase/client';
 import { tailorResumeRequestSchema, TailoredResumeResult } from '@/lib/types';
 
@@ -8,48 +7,47 @@ export const runtime = 'nodejs';
 
 const MODEL_NAME = 'gemini-2.5-flash';
 
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-};
-
-function isFirebaseAiConfigured(): boolean {
-  return Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId);
+function isGeminiConfigured(): boolean {
+  return Boolean(process.env.GEMINI_API_KEY);
 }
 
-const RESULT_SCHEMA = Schema.object({
+const RESULT_SCHEMA: Schema = {
+  type: SchemaType.OBJECT,
   properties: {
-    matchScore: Schema.number({
+    matchScore: {
+      type: SchemaType.NUMBER,
       description: 'Overall match score between the resume and job, 0-100.',
-    }),
-    tailoredSummary: Schema.string({
+    },
+    tailoredSummary: {
+      type: SchemaType.STRING,
       description: 'A rewritten professional summary tailored to this specific job.',
-    }),
-    highlightedSkills: Schema.array({
-      items: Schema.string(),
+    },
+    highlightedSkills: {
+      type: SchemaType.ARRAY,
+      items: { type: SchemaType.STRING },
       description: "Skills from the candidate's existing skill list to emphasize for this job, ordered by relevance.",
-    }),
-    recommendedBullets: Schema.array({
-      items: Schema.object({
+    },
+    recommendedBullets: {
+      type: SchemaType.ARRAY,
+      items: {
+        type: SchemaType.OBJECT,
         properties: {
-          roleId: Schema.string({ description: 'The id of the work experience entry this bullet belongs to.' }),
-          originalBullet: Schema.string(),
-          tailoredBullet: Schema.string(),
-          reasoning: Schema.string({ description: 'Brief explanation of why this rewrite better targets the job.' }),
+          roleId: { type: SchemaType.STRING, description: 'The id of the work experience entry this bullet belongs to.' },
+          originalBullet: { type: SchemaType.STRING },
+          tailoredBullet: { type: SchemaType.STRING },
+          reasoning: { type: SchemaType.STRING, description: 'Brief explanation of why this rewrite better targets the job.' },
         },
-      }),
+      },
       description: 'Rewritten versions of existing resume bullets, tailored to the job description.',
-    }),
-    missingKeywords: Schema.array({
-      items: Schema.string(),
+    },
+    missingKeywords: {
+      type: SchemaType.ARRAY,
+      items: { type: SchemaType.STRING },
       description: "Important keywords/skills from the job posting that are missing from the candidate's resume.",
-    }),
+    },
   },
-});
+  required: ['matchScore', 'tailoredSummary', 'highlightedSkills', 'recommendedBullets', 'missingKeywords'],
+};
 
 export async function POST(request: NextRequest) {
   try {
@@ -65,12 +63,12 @@ export async function POST(request: NextRequest) {
 
     const { baseResume, jobDetails, jobUrl } = parsed.data;
 
-    if (!isFirebaseAiConfigured()) {
+    if (!isGeminiConfigured()) {
       return NextResponse.json(
         {
           success: false,
           error:
-            'Firebase AI Logic is not configured. Add your Firebase web app config (NEXT_PUBLIC_FIREBASE_* values, from Project settings -> Your apps) to .env.local, make sure the Gemini API is enabled for this project (Firebase console -> Build -> AI Logic -> Get started), and restart the server to enable tailoring.',
+            'GEMINI_API_KEY is not configured. Get a free key at https://aistudio.google.com/apikey, add it to .env.local, and restart the server to enable tailoring.',
         },
         { status: 200 }
       );
@@ -113,9 +111,8 @@ Respond with JSON matching the required schema.`;
 
     let tailoredResult: TailoredResumeResult;
     try {
-      const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-      const ai = getAI(app, { backend: new GoogleAIBackend() });
-      const model = getGenerativeModel(ai, {
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+      const model = genAI.getGenerativeModel({
         model: MODEL_NAME,
         generationConfig: {
           responseMimeType: 'application/json',
@@ -127,12 +124,12 @@ Respond with JSON matching the required schema.`;
       const text = result.response.text();
       tailoredResult = JSON.parse(text) as TailoredResumeResult;
     } catch (aiError) {
-      console.error('Gemini/Firebase AI Logic error:', aiError);
+      console.error('Gemini API error:', aiError);
       const message = aiError instanceof Error ? aiError.message : 'Unknown error';
       return NextResponse.json(
         {
           success: false,
-          error: `Failed to reach Gemini via Firebase AI Logic: ${message}. Make sure the Gemini API is enabled for this Firebase project (Build -> AI Logic in the Firebase console).`,
+          error: `Failed to reach the Gemini API: ${message}. Check that GEMINI_API_KEY in .env.local is valid.`,
         },
         { status: 200 }
       );
