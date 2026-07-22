@@ -18,8 +18,39 @@ env:
       - BUILD
       - RUNTIME
 
-  # Set with: firebase apphosting:secrets:set ANTHROPIC_API_KEY
-  - variable: ANTHROPIC_API_KEY
-    secret: ANTHROPIC_API_KEY
+  # Firebase AI Logic (Gemini) web app config -- not secret, identifies the project/app.
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: AIzaSyDkuiU-c5kEA30pbqBLEjK0o5Aj4Si4NwM
     availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: resume-tailor-2026.firebaseapp.com
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: resume-tailor-2026
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: resume-tailor-2026.firebasestorage.app
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "169070549106"
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: "1:169070549106:web:4d0a3ec671ef3d3f558aeb"
+    availability:
+      - BUILD
       - RUNTIME

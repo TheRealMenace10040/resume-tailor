@@ -1,54 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAI, getGenerativeModel, GoogleAIBackend, Schema } from 'firebase/ai';
 import { supabase } from '@/lib/supabase/client';
 import { tailorResumeRequestSchema, TailoredResumeResult } from '@/lib/types';
 
 export const runtime = 'nodejs';
 
-const MODEL = 'claude-sonnet-5';
+const MODEL_NAME = 'gemini-2.5-flash';
 
-const RESULT_TOOL = {
-  name: 'submit_tailored_resume',
-  description: 'Submit the structured resume-tailoring analysis.',
-  input_schema: {
-    type: 'object' as const,
-    properties: {
-      matchScore: {
-        type: 'number',
-        description: 'Overall match score between the resume and job, 0-100.',
-      },
-      tailoredSummary: {
-        type: 'string',
-        description: 'A rewritten professional summary tailored to this specific job.',
-      },
-      highlightedSkills: {
-        type: 'array',
-        items: { type: 'string' },
-        description: "Skills from the candidate's existing skill list to emphasize for this job, ordered by relevance.",
-      },
-      recommendedBullets: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            roleId: { type: 'string', description: 'The id of the work experience entry this bullet belongs to.' },
-            originalBullet: { type: 'string' },
-            tailoredBullet: { type: 'string' },
-            reasoning: { type: 'string', description: 'Brief explanation of why this rewrite better targets the job.' },
-          },
-          required: ['roleId', 'originalBullet', 'tailoredBullet', 'reasoning'],
-        },
-        description: 'Rewritten versions of existing resume bullets, tailored to the job description.',
-      },
-      missingKeywords: {
-        type: 'array',
-        items: { type: 'string' },
-        description: "Important keywords/skills from the job posting that are missing from the candidate's resume.",
-      },
-    },
-    required: ['matchScore', 'tailoredSummary', 'highlightedSkills', 'recommendedBullets', 'missingKeywords'],
-  },
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
+
+function isFirebaseAiConfigured(): boolean {
+  return Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId);
+}
+
+const RESULT_SCHEMA = Schema.object({
+  properties: {
+    matchScore: Schema.number({
+      description: 'Overall match score between the resume and job, 0-100.',
+    }),
+    tailoredSummary: Schema.string({
+      description: 'A rewritten professional summary tailored to this specific job.',
+    }),
+    highlightedSkills: Schema.array({
+      items: Schema.string(),
+      description: "Skills from the candidate's existing skill list to emphasize for this job, ordered by relevance.",
+    }),
+    recommendedBullets: Schema.array({
+      items: Schema.object({
+        properties: {
+          roleId: Schema.string({ description: 'The id of the work experience entry this bullet belongs to.' }),
+          originalBullet: Schema.string(),
+          tailoredBullet: Schema.string(),
+          reasoning: Schema.string({ description: 'Brief explanation of why this rewrite better targets the job.' }),
+        },
+      }),
+      description: 'Rewritten versions of existing resume bullets, tailored to the job description.',
+    }),
+    missingKeywords: Schema.array({
+      items: Schema.string(),
+      description: "Important keywords/skills from the job posting that are missing from the candidate's resume.",
+    }),
+  },
+});
 
 export async function POST(request: NextRequest) {
   try {
@@ -64,19 +65,16 @@ export async function POST(request: NextRequest) {
 
     const { baseResume, jobDetails, jobUrl } = parsed.data;
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
+    if (!isFirebaseAiConfigured()) {
       return NextResponse.json(
         {
           success: false,
           error:
-            'ANTHROPIC_API_KEY is not configured. Add your Anthropic API key (from console.anthropic.com) to .env.local as ANTHROPIC_API_KEY and restart the server to enable tailoring.',
+            'Firebase AI Logic is not configured. Add your Firebase web app config (NEXT_PUBLIC_FIREBASE_* values, from Project settings -> Your apps) to .env.local, make sure the Gemini API is enabled for this project (Firebase console -> Build -> AI Logic -> Get started), and restart the server to enable tailoring.',
         },
         { status: 200 }
       );
     }
-
-    const anthropic = new Anthropic({ apiKey });
 
     const experienceBlock = baseResume.experience
       .map(
@@ -87,7 +85,7 @@ export async function POST(request: NextRequest) {
       )
       .join('\n');
 
-    const userMessage = `Compare this candidate's resume against the job posting below and produce a tailoring analysis.
+    const prompt = `Compare this candidate's resume against the job posting below and produce a tailoring analysis.
 
 CANDIDATE RESUME
 Summary: ${baseResume.summary}
@@ -111,28 +109,34 @@ Instructions:
 - recommendedBullets: for each work experience bullet worth improving, provide a tailored rewrite that better reflects the job's language/requirements without fabricating experience. Use the exact roleId from the resume.
 - missingKeywords: important skills/requirements from the job posting that are not present anywhere in the candidate's resume.
 
-Call the submit_tailored_resume tool with your analysis.`;
+Respond with JSON matching the required schema.`;
 
-    const message = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 4096,
-      tools: [RESULT_TOOL],
-      tool_choice: { type: 'tool', name: RESULT_TOOL.name },
-      messages: [{ role: 'user', content: userMessage }],
-    });
+    let tailoredResult: TailoredResumeResult;
+    try {
+      const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+      const ai = getAI(app, { backend: new GoogleAIBackend() });
+      const model = getGenerativeModel(ai, {
+        model: MODEL_NAME,
+        generationConfig: {
+          responseMimeType: 'application/json',
+          responseSchema: RESULT_SCHEMA,
+        },
+      });
 
-    const toolUseBlock = message.content.find(
-      (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
-    );
-
-    if (!toolUseBlock) {
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+      tailoredResult = JSON.parse(text) as TailoredResumeResult;
+    } catch (aiError) {
+      console.error('Gemini/Firebase AI Logic error:', aiError);
+      const message = aiError instanceof Error ? aiError.message : 'Unknown error';
       return NextResponse.json(
-        { success: false, error: 'The AI did not return a structured result. Please try again.' },
+        {
+          success: false,
+          error: `Failed to reach Gemini via Firebase AI Logic: ${message}. Make sure the Gemini API is enabled for this Firebase project (Build -> AI Logic in the Firebase console).`,
+        },
         { status: 200 }
       );
     }
-
-    const tailoredResult = toolUseBlock.input as TailoredResumeResult;
 
     const { error: insertError } = await supabase.from('resume_history').insert({
       job_title: jobDetails.title,
