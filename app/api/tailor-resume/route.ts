@@ -5,7 +5,7 @@ import { tailorResumeRequestSchema, TailoredResumeResult } from '@/lib/types';
 
 export const runtime = 'nodejs';
 
-const MODEL_NAME = 'gemini-2.5-flash';
+const MODEL_NAME = 'gemini-flash-latest';
 
 function isGeminiConfigured(): boolean {
   return Boolean(process.env.GEMINI_API_KEY);
