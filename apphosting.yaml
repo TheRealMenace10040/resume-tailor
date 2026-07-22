@@ -1,0 +1,25 @@
+# Firebase App Hosting configuration
+# https://firebase.google.com/docs/app-hosting/configure
+
+runConfig:
+  minInstances: 0
+  maxInstances: 1
+
+env:
+  - variable: NEXT_PUBLIC_SUPABASE_URL
+    value: https://rqqvlqbnhrxfeaaaxvhg.supabase.co
+    availability:
+      - BUILD
+      - RUNTIME
+
+  - variable: NEXT_PUBLIC_SUPABASE_ANON_KEY
+    value: sb_publishable_z7-MvSvPnSIcE89YSQ9x_A_t3zqvU6Z
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # Set with: firebase apphosting:secrets:set ANTHROPIC_API_KEY
+  - variable: ANTHROPIC_API_KEY
+    secret: ANTHROPIC_API_KEY
+    availability:
+      - RUNTIME
